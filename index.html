@@ -106,7 +106,7 @@
       </div>
       <div class="control">
         <label for="deposit"><span>Monthly Deposit</span><output id="depositOut"></output></label>
-        <input id="deposit" type="range" min="0" max="10000" step="50" value="-=0">
+        <input id="deposit" type="range" min="0" max="10000" step="50" value="-=0" autocomplete="off"> 
       </div>
       <div class="control">
         <label for="years"><span>Years</span><output id="yearsOut"></output></label>
@@ -264,8 +264,20 @@ canvas.addEventListener("pointercancel",()=>dragging=false);
 canvas.addEventListener("click",selectFromEvent);
 window.addEventListener("resize",resize);
 
+window.addEventListener(
+  "resize",
+  resize
+);
+
+/* Force every calculator value to zero whenever the page loads */
+$("apy").value = "0";
+$("deposit").value = "0";
+$("years").value = "0";
+$("start").value = "0";
+
 recalc(true);
 resize();
 </script>
+
 </body>
 </html>
