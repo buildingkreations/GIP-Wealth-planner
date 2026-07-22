@@ -1,0 +1,271 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Interactive High-Yield Savings Calculator</title>
+<style>
+  :root{
+    --bg:#050505;
+    --panel:#292929;
+    --panel2:#202020;
+    --grid:#3b3b3b;
+    --text:#f5f5f5;
+    --muted:#bdbdbd;
+    --accent:#3b82f6;
+    --accent2:#60a5fa;
+    --border:#555;
+  }
+  *{box-sizing:border-box}
+  body{
+    margin:0;
+    background:var(--bg);
+    color:var(--text);
+    font-family:Arial,Helvetica,sans-serif;
+    min-height:100vh;
+    padding:24px;
+  }
+  h1{margin:0 0 20px;font-size:30px}
+  .app{
+    max-width:1400px;
+    margin:auto;
+    border:1px solid var(--border);
+    border-radius:32px;
+    overflow:hidden;
+    background:var(--panel);
+    display:grid;
+    grid-template-columns:minmax(360px, 1fr) minmax(500px, 1.2fr);
+  }
+  .left,.right{padding:28px}
+  .left{border-right:1px solid var(--border)}
+  .formula{
+    text-align:center;
+    font-family:Georgia,"Times New Roman",serif;
+    font-style:italic;
+    font-size:34px;
+    margin:24px 0 30px;
+  }
+  .controls{display:grid;gap:18px}
+  .control label{
+    display:flex;justify-content:space-between;gap:14px;
+    color:var(--muted);font-weight:700;margin-bottom:8px
+  }
+  .control output{color:var(--text)}
+  input[type=range]{width:100%;accent-color:var(--accent)}
+  .metrics{
+    display:grid;grid-template-columns:repeat(3,1fr);
+    gap:12px;margin-top:24px
+  }
+  .metric{
+    background:var(--panel2);border:1px solid #444;border-radius:14px;padding:14px
+  }
+  .metric .k{color:var(--muted);font-size:12px;margin-bottom:6px}
+  .metric .v{font-size:21px;font-weight:800}
+  .equation{
+    color:var(--muted);
+    font-family:Georgia,"Times New Roman",serif;
+    text-align:center;
+    font-size:21px;
+    margin-top:24px;
+    line-height:1.5
+  }
+  .right{position:relative;min-height:630px}
+  canvas{width:100%;height:560px;display:block}
+  .tip{
+    position:absolute;
+    pointer-events:none;
+    background:var(--accent);
+    color:white;
+    font-size:22px;
+    font-weight:800;
+    padding:10px 18px;
+    border-radius:999px;
+    transform:translate(-50%,-130%);
+    white-space:nowrap;
+    box-shadow:0 2px 8px rgba(0,0,0,.5);
+  }
+  .hint{color:var(--muted);text-align:center;margin-top:8px}
+  @media (max-width:950px){
+    .app{grid-template-columns:1fr}
+    .left{border-right:0;border-bottom:1px solid var(--border)}
+    .right{min-height:560px}
+    canvas{height:480px}
+  }
+</style>
+</head>
+<body>
+<h1>Future Value of a High-Yield Savings Account</h1>
+<div class="app">
+  <section class="left">
+    <div class="formula">FV = PMT × ((1 + r)<sup>n</sup> − 1) ÷ r</div>
+
+    <div class="controls">
+      <div class="control">
+        <label for="apy"><span>Annual APY</span><output id="apyOut"></output></label>
+        <input id="apy" type="range" min="0" max="15" step="0.05" value="4.25">
+      </div>
+      <div class="control">
+        <label for="deposit"><span>Monthly Deposit</span><output id="depositOut"></output></label>
+        <input id="deposit" type="range" min="0" max="10000" step="50" value="1000">
+      </div>
+      <div class="control">
+        <label for="years"><span>Years</span><output id="yearsOut"></output></label>
+        <input id="years" type="range" min="1" max="50" step="1" value="10">
+      </div>
+      <div class="control">
+        <label for="start"><span>Starting Balance</span><output id="startOut"></output></label>
+        <input id="start" type="range" min="0" max="100000" step="500" value="0">
+      </div>
+    </div>
+
+    <div class="metrics">
+      <div class="metric"><div class="k">Total Deposits</div><div class="v" id="contrib"></div></div>
+      <div class="metric"><div class="k">Interest Earned</div><div class="v" id="interest"></div></div>
+      <div class="metric"><div class="k">Future Value</div><div class="v" id="future"></div></div>
+    </div>
+
+    <div class="equation" id="equation"></div>
+  </section>
+
+  <section class="right">
+    <canvas id="chart"></canvas>
+    <div class="tip" id="tip"></div>
+    <div class="hint">Drag the blue point left or right to inspect the balance at any month.</div>
+  </section>
+</div>
+
+<script>
+const $ = id => document.getElementById(id);
+const inputs = ["apy","deposit","years","start"].map($);
+const canvas = $("chart");
+const ctx = canvas.getContext("2d");
+const tip = $("tip");
+
+let data = [];
+let selected = 0;
+let dragging = false;
+
+const money = n => new Intl.NumberFormat("en-US",{style:"currency",currency:"USD",maximumFractionDigits:2}).format(n);
+const compact = n => new Intl.NumberFormat("en-US",{notation:"compact",maximumFractionDigits:1}).format(n);
+
+function values(){
+  return {
+    apy:+$("apy").value,
+    deposit:+$("deposit").value,
+    years:+$("years").value,
+    start:+$("start").value
+  };
+}
+function balanceAt(month,v){
+  const r=(v.apy/100)/12;
+  if(month===0) return v.start;
+  if(r===0) return v.start + v.deposit*month;
+  return v.start*Math.pow(1+r,month) + v.deposit*((Math.pow(1+r,month)-1)/r);
+}
+function recalc(resetSelected=false){
+  const v=values();
+  const months=v.years*12;
+  data=Array.from({length:months+1},(_,m)=>balanceAt(m,v));
+  if(resetSelected || selected>months) selected=months;
+
+  $("apyOut").textContent=v.apy.toFixed(2)+"%";
+  $("depositOut").textContent=money(v.deposit);
+  $("yearsOut").textContent=v.years;
+  $("startOut").textContent=money(v.start);
+
+  const fv=data[months];
+  const contributions=v.start+v.deposit*months;
+  $("contrib").textContent=money(contributions);
+  $("interest").textContent=money(fv-contributions);
+  $("future").textContent=money(fv);
+  $("equation").innerHTML=
+    `FV = ${money(v.deposit)} × ((1 + ${(v.apy/1200).toFixed(6)})<sup>${months}</sup> − 1) ÷ ${(v.apy/1200).toFixed(6)}<br><strong>${money(fv)}</strong>`;
+  draw();
+}
+function resize(){
+  const dpr=window.devicePixelRatio||1;
+  const rect=canvas.getBoundingClientRect();
+  canvas.width=Math.round(rect.width*dpr);
+  canvas.height=Math.round(rect.height*dpr);
+  ctx.setTransform(dpr,0,0,dpr,0,0);
+  draw();
+}
+function plotBounds(){
+  const rect=canvas.getBoundingClientRect();
+  return {w:rect.width,h:rect.height,l:78,r:25,t:30,b:52};
+}
+function draw(){
+  if(!data.length) return;
+  const {w,h,l,r,t,b}=plotBounds();
+  ctx.clearRect(0,0,w,h);
+  ctx.fillStyle="#202020";
+  ctx.fillRect(0,0,w,h);
+
+  const max=Math.max(...data)*1.08 || 1;
+  const x=m=>l+(m/(data.length-1))*(w-l-r);
+  const y=v=>t+(1-v/max)*(h-t-b);
+
+  ctx.strokeStyle="#393939";
+  ctx.lineWidth=1;
+  ctx.fillStyle="#bdbdbd";
+  ctx.font="14px Arial";
+  ctx.textAlign="right";
+  ctx.textBaseline="middle";
+
+  for(let i=0;i<=7;i++){
+    const val=max*i/7;
+    const yy=y(val);
+    ctx.beginPath();ctx.moveTo(l,yy);ctx.lineTo(w-r,yy);ctx.stroke();
+    ctx.fillText(compact(val),l-12,yy);
+  }
+  ctx.textAlign="center";
+  ctx.textBaseline="top";
+  const ticks=10;
+  for(let i=0;i<=ticks;i++){
+    const m=Math.round((data.length-1)*i/ticks);
+    const xx=x(m);
+    ctx.beginPath();ctx.moveTo(xx,t);ctx.lineTo(xx,h-b);ctx.stroke();
+    ctx.fillText(m,xx,h-b+10);
+  }
+
+  ctx.strokeStyle="#4a8dff";
+  ctx.lineWidth=4;
+  ctx.beginPath();
+  data.forEach((v,i)=>{
+    const xx=x(i),yy=y(v);
+    i===0?ctx.moveTo(xx,yy):ctx.lineTo(xx,yy);
+  });
+  ctx.stroke();
+
+  const px=x(selected),py=y(data[selected]);
+  ctx.fillStyle="#4a8dff";
+  ctx.beginPath();ctx.arc(px,py,11,0,Math.PI*2);ctx.fill();
+  ctx.strokeStyle="#111";ctx.lineWidth=3;ctx.stroke();
+
+  const rect=canvas.getBoundingClientRect();
+  tip.textContent=`Month ${selected}: ${money(data[selected])}`;
+  tip.style.left=(rect.left + px - canvas.parentElement.getBoundingClientRect().left)+"px";
+  tip.style.top=(rect.top + py - canvas.parentElement.getBoundingClientRect().top)+"px";
+}
+function selectFromEvent(e){
+  const rect=canvas.getBoundingClientRect();
+  const {w,l,r}=plotBounds();
+  const clientX=e.touches?e.touches[0].clientX:e.clientX;
+  const px=Math.max(l,Math.min(w-r,clientX-rect.left));
+  selected=Math.round(((px-l)/(w-l-r))*(data.length-1));
+  draw();
+}
+
+inputs.forEach(el=>el.addEventListener("input",()=>recalc(true)));
+canvas.addEventListener("pointerdown",e=>{dragging=true;canvas.setPointerCapture(e.pointerId);selectFromEvent(e)});
+canvas.addEventListener("pointermove",e=>{if(dragging)selectFromEvent(e)});
+canvas.addEventListener("pointerup",()=>dragging=false);
+canvas.addEventListener("pointercancel",()=>dragging=false);
+canvas.addEventListener("click",selectFromEvent);
+window.addEventListener("resize",resize);
+
+recalc(true);
+resize();
+</script>
+</body>
+</html>
